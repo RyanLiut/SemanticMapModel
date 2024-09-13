@@ -15,7 +15,7 @@
 
 ## Examples
 
-1. An dialect investigate to “敆”
+1. A dialect investigation to “敆”
 2. Repetitive adverbs
 3. Repetitive adverbs with more functions
 
