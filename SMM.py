@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import matplotlib.font_manager as fm
 fm.fontManager.addfont('times_with_simsun.ttf')
 from sklearn.manifold import MDS
+from itertools import combinations
 
 class SemanticMap:
     def __init__(self, tfM, featNames, adjM=None, GT_adj=None, zeroOcc=0):
@@ -55,7 +56,18 @@ class SemanticMap:
     def accWithGT(self, T):
         return np.sum(nx.to_numpy_array(T) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
     
+    def get_subGraph_connected(self, T):
+        nodes = list(T.nodes)
+        self.poss_subG_list = []
+
+        for r in range(2, len(nodes)+1):
+            for node_combination in combinations(nodes, r):
+                sub_graph = T.subgraph(node_combination)
+                if nx.is_connected(sub_graph):
+                    self.poss_subG_list.append(sub_graph)
+
     def check_subGraph_connectivity(self, G, selected_ins):
+        self.get_subGraph_connected(G)
         connected_flag = []
         self.subG_list = []
         for i in self.tfM[selected_ins, :]: # O(N)
@@ -64,12 +76,15 @@ class SemanticMap:
             connected_flag.append(connected)
             self.subG_list.append(subG)
 
-        acc = sum(connected_flag) / len(connected_flag)
+        recall = sum(connected_flag) / len(self.subG_list)
+        prec = sum(connected_flag) / len(self.poss_subG_list)
+        F1 = 2 * (recall * prec) / (recall + prec)
         Deg = [d for _, d in G.degree()]
         Deg_mean = np.mean(Deg)
         Deg_std = np.std(Deg)
 
-        return connected_flag, acc, Deg_mean, Deg_std
+        self.metrics = (prec, recall, F1, Deg_mean, Deg_std)
+        self.connected_flag = connected_flag
 
     def highlight_subgraphs(self, G, subgraphs, linestyles=None, colors=None):
         """ TODO: NOT COMPETE!
@@ -128,7 +143,7 @@ class SemanticMap:
 
         plt.show()
 
-    def visualizeSM(self, T, hit=0, acc=1.0, acc_GT=0.0, deg_std=0.0, showIns=False, savePath=None):
+    def visualizeSM(self, T, hit=0, acc_GT=0.0, showIns=False, savePath=None):
         '''
         To visualize a semantic map with instances on it.
         '''
@@ -138,9 +153,9 @@ class SemanticMap:
         plt.rcParams['font.family'] = [ 'Heiti TC','Arial', 'Helvetica', 'Times New Roman']
         fig = plt.figure()#figsize=(100,100))
         if not acc_GT is None:
-            plt.title("Semantic Map with weights %.2f; %d hit; %.2f ACC from connectivity;\n %.2f ACC_GT; Std degree: %.2f"%(T.size(weight="weight"), hit,acc,acc_GT, deg_std))
+            plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f \n ACC: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4], acc_GT))
         else:
-            plt.title("Semantic Map with weights %.2f; %d hit; %.2f ACC from connectivity;\n STd degree: %.2f"%(T.size(weight="weight"), hit,acc,deg_std))
+            plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4]))
         pos = nx.planar_layout(T)
         nx.draw(T, pos, labels=self.featNames,with_labels=True, node_size=400, font_size=10,alpha=0.8, font_family='Times New Roman + SimSun')
         # nx.draw_networkx_labels(T, pos, labels=self.featNames, font_family=font_path)  # Draw labels
@@ -204,25 +219,28 @@ class SemanticMap:
         for ix, t in enumerate(trees):
             if ix % 1 == 0:
                 print(f"This is the id of the spanning tree: {ix}")
-                flag, acc, deg_m, deg_std = self.check_subGraph_connectivity(t, selected_ins)
-                print(ix, flag)
-                print("ACC: %.2f; Weights: %.2f; Mean degree: %.2f; Std degree: %.2f" % (acc, t.size(weight="weight"), deg_m, deg_std))
-                if acc >= acc_thr:
+                self.check_subGraph_connectivity(t, selected_ins)
+                print(ix, self.connected_flag)
+                print(">>> Intrinsic Evaluation >>>")
+                print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
+                print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
+                if self.metrics[1] >= acc_thr: # recall
                     optimal_trees.append(t)
                     if not self.GT_adj is None:
                         acc_GT = self.accWithGT(t)
                     else:
                         acc_GT = None
                     if acc_GT:
+                        print(">>> Extrinsic Evaluation >>>")
                         print("ACC_GT: %.2f"%acc_GT)
                     # self.highlight_subgraphs(t, subG_list)
-                    self.wrongcases = [ix for ix,i in enumerate(flag) if not i]
+                    self.wrongcases = [ix for ix,i in enumerate(self.connected_flag) if not i]
                     print("Wrong instances id: %s" % self.wrongcases)
-                    self.visualizeSM(t, hit=ix, acc=acc, acc_GT=acc_GT, deg_std=deg_std, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:])
+                    self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
                 else:
                     print(f"End in iter: {ix} because it has lower acc before maximum iteration.")
                     break
-                if ix == 10 or acc < acc_thr:
+                if ix == 10 or self.metrics[1] < acc_thr:
                     print(f"End because it reaches maximum iteration {ix}")
                     break
                 # self.visualizeSM(t)
