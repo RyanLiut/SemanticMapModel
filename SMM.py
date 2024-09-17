@@ -2,7 +2,8 @@ import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
 import matplotlib.font_manager as fm
-fm.fontManager.addfont('times_with_simsun.ttf')
+from matplotlib.lines import Line2D
+fm.fontManager.addfont('/Users/lz/Documents/博士/课程/语言类型学/SemanticMap/SemanticMapModel/times_with_simsun.ttf')
 from sklearn.manifold import MDS
 from itertools import combinations
 
@@ -10,8 +11,11 @@ class SemanticMap:
     def __init__(self, tfM, featNames, adjM=None, GT_adj=None, zeroOcc=0):
         self.tfM = tfM # (N, D)
         self.featNames = {ix:i for ix, i in enumerate(featNames)}
+        self.n_nodes = len(featNames)
         self.mergeFeat()
         self.GT_adj = GT_adj
+        if not self.GT_adj is None:
+            self.visualizeSM(nx.from_numpy_array(self.GT_adj), savePath="output/GT.pdf")
         self.zeroOcc = zeroOcc
         self.adjM = adjM
 
@@ -31,12 +35,16 @@ class SemanticMap:
         print(self.featNames) # for debug
         print(self.tfM)
 
-    def constG(self):
+    def constG(self, norm=False):
         '''
         To construct a undirected acyclic (fully connected) graph according to a term-feature matrix
         '''
         mat = self.tfM.T @ self.tfM + (1 - self.tfM).T @ (1 - self.tfM) * self.zeroOcc # 0 has the fastest convergence.
         print(mat.shape)
+        if norm:
+            mat = mat.astype("float")
+            mat /= (np.sum(self.tfM.T,axis=1,keepdims=True) + np.sum(self.tfM, axis=0,keepdims=True)-mat)
+            mat *= 100
         if self.adjM is None:
             self.adjM = np.triu(mat)
 
@@ -54,7 +62,9 @@ class SemanticMap:
             print(components)
 
     def accWithGT(self, T):
-        return np.sum(nx.to_numpy_array(T) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
+        # print((nx.to_numpy_array(T)!=0))
+        # print(self.GT_adj)
+        return np.sum((nx.to_numpy_array(T)!=0) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
     
     def get_subGraph_connected(self, T):
         nodes = list(T.nodes)
@@ -78,7 +88,10 @@ class SemanticMap:
 
         recall = sum(connected_flag) / len(self.subG_list)
         prec = sum(connected_flag) / len(self.poss_subG_list)
+        print(sum(connected_flag), len(self.poss_subG_list))
         F1 = 2 * (recall * prec) / (recall + prec)
+        # prec = 0
+        # F1 = 0
         Deg = [d for _, d in G.degree()]
         Deg_mean = np.mean(Deg)
         Deg_std = np.std(Deg)
@@ -152,21 +165,37 @@ class SemanticMap:
         font_names = ['Noto Sans Mandaic', 'Arial', 'Comic Sans MS', ]
         plt.rcParams['font.family'] = [ 'Heiti TC','Arial', 'Helvetica', 'Times New Roman']
         fig = plt.figure()#figsize=(100,100))
-        if not acc_GT is None:
-            plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f \n ACC: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4], acc_GT))
-        else:
-            plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4]))
-        pos = nx.planar_layout(T)
+        # if not acc_GT is None:
+        #     plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f \n ACC: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4], acc_GT))
+        # else:
+        #     plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4]))
+        pos = nx.spring_layout(T, k=.5, seed=42)
         nx.draw(T, pos, labels=self.featNames,with_labels=True, node_size=400, font_size=10,alpha=0.8, font_family='Times New Roman + SimSun')
         # nx.draw_networkx_labels(T, pos, labels=self.featNames, font_family=font_path)  # Draw labels
         weights = {k:round(nx.get_edge_attributes(T, 'weight')[k],1) for k,v in nx.get_edge_attributes(T, 'weight').items()}
-        edge_width = [T[u][v]['weight'] * 0.7 for u, v in T.edges()]
+        edge_width = [T[u][v]['weight'] * 1.0 for u, v in T.edges()]
         nx.draw_networkx_edges(T, pos, width=edge_width, edge_color="plum")
+        if not self.GT_adj is None:
+            nx.draw_networkx_edges(nx.from_numpy_array(self.GT_adj), pos, style="-.", width=0.8,alpha=0.7)
+            # 创建图例条目
+            # 在边末端添加点（突出）
+            for u, v in nx.from_numpy_array(self.GT_adj).edges():
+                x_end, y_end = pos[v]  # 获取边的末端坐标
+                plt.scatter(x_end, y_end, s=15, color='black')  # 在末端绘制红色圆点
+            
+            legend_elements = [
+                Line2D([0], [0], color='plum', lw=2, label='Generated Network', ),  # 实线
+                Line2D([0], [0], color='black', lw=1, linestyle='--', label='True Network')  # 虚线
+            ]
+            font_properties = fm.FontProperties(family=['Times New Roman'], size=12)
+            plt.legend(handles=legend_elements, loc='upper left', prop=font_properties)
         nx.draw_networkx_edge_labels(T,pos,edge_labels=weights, font_size=5)
+
 
         if savePath:
             plt.savefig(savePath, dpi=300)
         plt.show()
+        plt.close()
 
         if showIns:
             subgraphs = self.subG_list
@@ -213,37 +242,60 @@ class SemanticMap:
         '''
         self.constG()
         # sys.exit(0)
+        if not self.GT_adj is None:
+            acc_GT_0 = self.accWithGT(self.G)
+            print(f"Accurcy in terms of GT before becoming a tree: {acc_GT_0}")
+            print("Precision: %.5f" % (self.n_nodes / (2 ** (self.n_nodes*(self.n_nodes-1)/2) - 1)))
+            print("Size: %d" % self.G.size(weight="weight"))
+        if  not self.GT_adj is None: # GT
+            print("Statistics of GT:")
+            self.check_subGraph_connectivity(nx.from_numpy_array(self.GT_adj), range(len(self.tfM)))
+            print(self.metrics)
+            print("Size: %d" % (nx.from_numpy_array(self.GT_adj * nx.adjacency_matrix(self.G).toarray()).size(weight="weight")))
+
         trees = nx.algorithms.tree.mst.SpanningTreeIterator(self.G, minimum=False)
         selected_ins = range(len(self.tfM))#[0,1,8,-1,-6]##[0,1]
         optimal_trees = []
+        std_list = []
+        prec_list = []
+        recall_list = []
+        weight_list = []
+        acc_list = []
         for ix, t in enumerate(trees):
-            if ix % 1 == 0:
+            if ix % 10000 == 0 and ix > 30000:
                 print(f"This is the id of the spanning tree: {ix}")
                 self.check_subGraph_connectivity(t, selected_ins)
                 print(ix, self.connected_flag)
                 print(">>> Intrinsic Evaluation >>>")
                 print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
+                print("Summed Weight: %d" % t.size(weight="weight"))
                 print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
-                if self.metrics[1] >= acc_thr: # recall
-                    optimal_trees.append(t)
-                    if not self.GT_adj is None:
-                        acc_GT = self.accWithGT(t)
-                    else:
-                        acc_GT = None
-                    if acc_GT:
-                        print(">>> Extrinsic Evaluation >>>")
-                        print("ACC_GT: %.2f"%acc_GT)
-                    # self.highlight_subgraphs(t, subG_list)
-                    self.wrongcases = [ix for ix,i in enumerate(self.connected_flag) if not i]
-                    print("Wrong instances id: %s" % self.wrongcases)
-                    self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
+                # prec_list.append(self.metrics[0])
+                recall_list.append(self.metrics[1])
+                weight_list.append(t.size(weight="weight"))
+                std_list.append(self.metrics[4])
+                if not self.GT_adj is None:
+                    acc_GT = self.accWithGT(t)
+                    print(">>> Extrinsic Evaluation >>>")
+                    print(f"ACC_GT: {acc_GT}")
+                    acc_list.append(acc_GT)
                 else:
-                    print(f"End in iter: {ix} because it has lower acc before maximum iteration.")
-                    break
-                if ix == 10 or self.metrics[1] < acc_thr:
-                    print(f"End because it reaches maximum iteration {ix}")
+                    acc_GT = None
+                # self.highlight_subgraphs(t, subG_list)
+                self.wrongcases = [ix for ix,i in enumerate(self.connected_flag) if not i]
+                print("Wrong instances id: %s" % self.wrongcases)
+                if self.metrics[1] >= acc_thr: # recall
+                    print(self.metrics[1], acc_thr)
+                    optimal_trees.append(t)
+                    self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
+                if ix == 100000:
+                    print(f"End to the maximum iteration: {ix}")
                     break
                 # self.visualizeSM(t)
 
         print("There are %d optimal trees" % len(optimal_trees))
         # _ = [self.visualizeSM(t) for t in optimal_trees]
+
+        print("Correlation to recall: %f" % np.corrcoef(acc_list, recall_list)[0, 1])
+        print("Correlation to std: %f" % np.corrcoef(acc_list, std_list)[0, 1])
+        print("Correlation to size: %f" % np.corrcoef(acc_list, weight_list)[0, 1])
