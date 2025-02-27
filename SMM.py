@@ -247,11 +247,11 @@ class SemanticMap:
         plt.title("Feature Similarity Visualization using MDS")
         plt.show()
 
-    def get_optimal_SpanningTrees(self, acc_thr = 1.0, figPath=None, moreEdges=True):
+    def get_optimal_SpanningTrees(self, acc_thr = 1.0, figPath=None, moreEdges=False):
         '''
         To get all the spanning trees given a graph. The trees should be ordered according to its sum of weights.
 
-        moreEdges: whether to add more edges to realize the 100% coverage rate.
+        moreEdges: whether to add more edges (circles) to realize the 100% coverage rate.
         '''
         self.constG()
         # sys.exit(0)
@@ -304,7 +304,7 @@ class SemanticMap:
                         else:
                             edge_info[edge]["max_weight"] = max(edge_info[edge]["max_weight"], weight)
 
-                    # 排序：优先按次数降序，其次按最大权重降序
+                    # 排序：按次数和最大权重降序
                     sorted_edges_by_number = sorted(
                         edge_info.items(),
                         key=lambda x: x[1]["count"] + x[1]["max_weight"],
