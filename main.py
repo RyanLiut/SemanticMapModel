@@ -66,7 +66,7 @@ if __name__ == "__main__":
     ])
     featNames_4 = ['类同', '补充', '重复', '延续', '更加', '减量', '还原', '条件', '任意', '极端', '严重', '无论', '上限', '顺承', '不协', '意外', '底限', '续话']#, '并列'] 
     # featNames_EN_4 = ['LT','BC', 'CF', 'YX', 'GJ', 'ZJ', 'JL', 'HY', 'TJ', 'RY', 'JD', 'YZ', 'WL', 'RB', 'SX', 'SC', 'BX', 'YW', 'DX', 'XH', 'BL']
-    featNames_EN_4 = ['AF', 'SU', 'RE', 'CO', 'GD', 'DE', 'IS', 'CD', 'DC', 'PT', 'SC', 'WH', 'SE', 'SD', 'IC', 'UE', 'BL','DC']
+    featNames_EN_4 = ['AF', 'SU', 'RE', 'CO', 'GD', 'DE', 'IS', 'CD', 'DC', 'PT', 'SC', 'WH', 'SE', 'SD', 'IC', 'UE', 'BL','DS']
     GT4 = np.zeros((len(featNames_4), len(featNames_4)))
     GT_inx = [(0,1), (0,7), (0,9), (1,2), (1,11), (1,13), (1,14), (2,3), (2,6), (2,12), (2,17), (3,4),(3,5), (3,7), (7,8), (7,9), (7,15), (8,16), (9,10)]
     print(GT4.shape)
@@ -80,8 +80,8 @@ if __name__ == "__main__":
     # featNames_5 = df.columns[2:-1]
     # assert len(featNames_5) == tfM_5.shape[1], print(len(featNames), tfM_5.shape[1])
     
-    savePath = "output/CS4_wGT.pdf"
-    SM = SemanticMap(tfM_4, featNames_EN_4,None, GT4)
+    savePath = "output/CS4_wGT_new.pdf"
+    SM = SemanticMap(tfM_4, featNames_4,None, GT4)
     SM.get_optimal_SpanningTrees(acc_thr=0.80, figPath=savePath)
     # SM.visualizeSM_2D()
 

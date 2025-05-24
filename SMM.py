@@ -3,7 +3,7 @@ import networkx as nx
 from matplotlib import pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.lines import Line2D
-fm.fontManager.addfont('/Users/lz/Documents/博士/课程/语言类型学/SemanticMap/SemanticMapModel/times_with_simsun.ttf')
+fm.fontManager.addfont('times_with_simsun.ttf')
 from sklearn.manifold import MDS
 from itertools import combinations
 
@@ -14,8 +14,8 @@ class SemanticMap:
         self.n_nodes = len(featNames)
         self.mergeFeat()
         self.GT_adj = GT_adj
-        if not self.GT_adj is None:
-            self.visualizeSM(nx.from_numpy_array(self.GT_adj), savePath="output/GT.pdf")
+        # if not self.GT_adj is None:
+        #     self.visualizeSM(nx.from_numpy_array(self.GT_adj), savePath="output/GT.pdf")
         self.zeroOcc = zeroOcc
         self.adjM = adjM
 
@@ -61,10 +61,18 @@ class SemanticMap:
         if len(components) != 1: # Due to the zero-occurrence, the components are always connected.
             print(components)
 
-    def accWithGT(self, T):
+    def accWithGT(self, T, norm=True):
         # print((nx.to_numpy_array(T)!=0))
         # print(self.GT_adj)
-        return np.sum((nx.to_numpy_array(T)!=0) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
+        acc = np.sum((nx.to_numpy_array(T)!=0) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
+        if norm:
+            tree_iterator = nx.algorithms.tree.mst.SpanningTreeIterator(self.G, minimum=True)
+            for lower_b in tree_iterator: 
+                lower_acc = np.sum((nx.to_numpy_array(lower_b)!=0) == self.GT_adj) / (self.GT_adj.shape[0] ** 2)
+                break
+            print("Lower Bound is %f" % lower_acc)
+            acc = (acc - lower_acc) / (1.0 - lower_acc)
+        return acc
     
     def get_subGraph_connected(self, T):
         nodes = list(T.nodes)
@@ -77,7 +85,7 @@ class SemanticMap:
                     self.poss_subG_list.append(sub_graph)
 
     def check_subGraph_connectivity(self, G, selected_ins):
-        self.get_subGraph_connected(G)
+        # self.get_subGraph_connected(G)
         connected_flag = []
         self.subG_list = []
         for i in self.tfM[selected_ins, :]: # O(N)
@@ -87,11 +95,13 @@ class SemanticMap:
             self.subG_list.append(subG)
 
         recall = sum(connected_flag) / len(self.subG_list)
+        '''
         prec = sum(connected_flag) / len(self.poss_subG_list)
         print(sum(connected_flag), len(self.poss_subG_list))
         F1 = 2 * (recall * prec) / (recall + prec)
-        # prec = 0
-        # F1 = 0
+        '''
+        prec = 0
+        F1 = 0
         Deg = [d for _, d in G.degree()]
         Deg_mean = np.mean(Deg)
         Deg_std = np.std(Deg)
@@ -170,8 +180,8 @@ class SemanticMap:
         # else:
         #     plt.title("Semantic Map with weights %.2f; %d hit;\n Recall: %.2f; Precision: %.2f; F1: %.2f; Std degree: %.2f"%(T.size(weight="weight"), hit,self.metrics[1], self.metrics[0], self.metrics[2], self.metrics[4]))
         pos = nx.spring_layout(T, k=.5, seed=42)
-        nx.draw(T, pos, labels=self.featNames,with_labels=True, node_size=400, font_size=10,alpha=0.8, font_family='Times New Roman + SimSun')
-        # nx.draw_networkx_labels(T, pos, labels=self.featNames, font_family=font_path)  # Draw labels
+        nx.draw(T, pos, labels=self.featNames,with_labels=False, node_size=400, font_size=10,alpha=0.3, font_family='Times New Roman + SimSun')
+        nx.draw_networkx_labels(T, pos, labels=self.featNames, font_family='Times New Roman + SimSun', font_size=10)  # Draw labels
         weights = {k:round(nx.get_edge_attributes(T, 'weight')[k],1) for k,v in nx.get_edge_attributes(T, 'weight').items()}
         edge_width = [T[u][v]['weight'] * 1.0 for u, v in T.edges()]
         nx.draw_networkx_edges(T, pos, width=edge_width, edge_color="plum")
@@ -236,6 +246,18 @@ class SemanticMap:
         plt.title("Feature Similarity Visualization using MDS")
         plt.show()
 
+    def get_random_subG(self, k=100):
+        '''
+        To get random sub-graph to simulate the random connection.
+        '''
+        subG_list = []
+        # np.random.seed(42)
+        for _ in range(k):
+            random_matrix = np.random.rand(*self.adjM.shape, )
+            mask = (random_matrix>=0.5).astype(int) # (self.adjM / np.max(self.adjM))
+            subG_list.append(nx.from_numpy_array(mask * self.adjM))
+        return subG_list
+
     def get_optimal_SpanningTrees(self, acc_thr = 1.0, figPath=None):
         '''
         To get all the spanning trees given a graph. The trees should be ordered according to its sum of weights.
@@ -254,6 +276,7 @@ class SemanticMap:
             print("Size: %d" % (nx.from_numpy_array(self.GT_adj * nx.adjacency_matrix(self.G).toarray()).size(weight="weight")))
 
         trees = nx.algorithms.tree.mst.SpanningTreeIterator(self.G, minimum=False)
+        randomSub = self.get_random_subG(k=1000)
         selected_ins = range(len(self.tfM))#[0,1,8,-1,-6]##[0,1]
         optimal_trees = []
         std_list = []
@@ -261,8 +284,9 @@ class SemanticMap:
         recall_list = []
         weight_list = []
         acc_list = []
+        weight_list_ix = []
         for ix, t in enumerate(trees):
-            if ix % 10000 == 0 and ix > 30000:
+            if ix % 1 == 0:
                 print(f"This is the id of the spanning tree: {ix}")
                 self.check_subGraph_connectivity(t, selected_ins)
                 print(ix, self.connected_flag)
@@ -270,12 +294,8 @@ class SemanticMap:
                 print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
                 print("Summed Weight: %d" % t.size(weight="weight"))
                 print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
-                # prec_list.append(self.metrics[0])
-                recall_list.append(self.metrics[1])
-                weight_list.append(t.size(weight="weight"))
-                std_list.append(self.metrics[4])
                 if not self.GT_adj is None:
-                    acc_GT = self.accWithGT(t)
+                    acc_GT = self.accWithGT(t, norm=False)
                     print(">>> Extrinsic Evaluation >>>")
                     print(f"ACC_GT: {acc_GT}")
                     acc_list.append(acc_GT)
@@ -284,11 +304,18 @@ class SemanticMap:
                 # self.highlight_subgraphs(t, subG_list)
                 self.wrongcases = [ix for ix,i in enumerate(self.connected_flag) if not i]
                 print("Wrong instances id: %s" % self.wrongcases)
+                # if len(self.wrongcases) == 5:
+                # prec_list.append(self.metrics[0])
+                recall_list.append(self.metrics[1])
+                if t.size(weight="weight") not in set(weight_list):
+                    weight_list_ix.append((ix,t.size(weight="weight"))) 
+                weight_list.append(t.size(weight="weight"))
+                std_list.append(self.metrics[4])
+                
                 if self.metrics[1] >= acc_thr: # recall
-                    print(self.metrics[1], acc_thr)
                     optimal_trees.append(t)
                     self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
-                if ix == 100000:
+                if ix == 0:
                     print(f"End to the maximum iteration: {ix}")
                     break
                 # self.visualizeSM(t)
@@ -296,6 +323,15 @@ class SemanticMap:
         print("There are %d optimal trees" % len(optimal_trees))
         # _ = [self.visualizeSM(t) for t in optimal_trees]
 
+        print(weight_list_ix)
         print("Correlation to recall: %f" % np.corrcoef(acc_list, recall_list)[0, 1])
         print("Correlation to std: %f" % np.corrcoef(acc_list, std_list)[0, 1])
         print("Correlation to size: %f" % np.corrcoef(acc_list, weight_list)[0, 1])
+
+        # plt.figure()
+        # plt.plot(range(len(acc_list)), acc_list, label="acc")
+        # plt.plot(range(len(acc_list)), np.array(weight_list)/weight_list[0], label="size")
+        # plt.plot(range(len(acc_list)), std_list, label="std")
+        # plt.plot(range(len(acc_list)), recall_list, label="recall")
+        # plt.legend()
+        # plt.show()
