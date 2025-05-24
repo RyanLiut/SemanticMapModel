@@ -6,12 +6,14 @@ from matplotlib.lines import Line2D
 fm.fontManager.addfont('times_with_simsun.ttf')
 from sklearn.manifold import MDS
 from itertools import combinations
-
+from collections import Counter
 class SemanticMap:
     def __init__(self, tfM, featNames, adjM=None, GT_adj=None, zeroOcc=0):
         self.tfM = tfM # (N, D)
         self.featNames = {ix:i for ix, i in enumerate(featNames)}
         self.n_nodes = len(featNames)
+        self.n_instances = tfM.shape[0]
+        self.ins2feats = {i : [self.featNames[j] for j in range(self.n_nodes) if self.tfM[i,j] != 0] for i in range(self.n_instances)}
         self.mergeFeat()
         self.GT_adj = GT_adj
         # if not self.GT_adj is None:
@@ -84,10 +86,15 @@ class SemanticMap:
                 if nx.is_connected(sub_graph):
                     self.poss_subG_list.append(sub_graph)
 
-    def check_subGraph_connectivity(self, G, selected_ins):
+    def check_subGraph_connectivity(self, G, selected_ins, onlyUnconn=False):
         # self.get_subGraph_connected(G)
         connected_flag = []
         self.subG_list = []
+        if onlyUnconn:
+            selected_ins = [i for i,j in zip(selected_ins, self.connected_flag) if not j]
+            print("Selected inx: ", selected_ins)
+            for si in selected_ins:
+                print(f"{si}: {'-'.join(self.ins2feats[si])}")
         for i in self.tfM[selected_ins, :]: # O(N)
             subG = G.subgraph({ix for ix,j in enumerate(i) if j==1})
             connected = nx.is_connected(subG)
@@ -107,7 +114,11 @@ class SemanticMap:
         Deg_std = np.std(Deg)
 
         self.metrics = (prec, recall, F1, Deg_mean, Deg_std)
-        self.connected_flag = connected_flag
+        if onlyUnconn:
+            for ix, f in zip(selected_ins, connected_flag):
+                self.connected_flag[ix] = f
+        else:
+            self.connected_flag = connected_flag
 
     def highlight_subgraphs(self, G, subgraphs, linestyles=None, colors=None):
         """ TODO: NOT COMPETE!
@@ -140,7 +151,7 @@ class SemanticMap:
 
         # Draw the graph
         # nx.draw(G, with_labels=True)
-        nx.draw(G, lay, labels=self.featNames,with_labels=True, node_size=150, font_size=10,alpha=0.8, font_family='Times New Roman + SimSun')
+        nx.draw(G, lay, labels=self.featNames,with_labels=True, node_size=150, font_size=10,alpha=0.8, font_family='times_with_simsun.ttf')
         # nx.draw_networkx_labels(T, pos, labels=self.featNames, font_family=font_path)  # Draw labels
         weights = {k:round(nx.get_edge_attributes(G, 'weight')[k],1) for k,v in nx.get_edge_attributes(G, 'weight').items()}
         nx.draw_networkx_edge_labels(G,lay,edge_labels=weights, font_size=5)
@@ -258,22 +269,25 @@ class SemanticMap:
             subG_list.append(nx.from_numpy_array(mask * self.adjM))
         return subG_list
 
-    def get_optimal_SpanningTrees(self, acc_thr = 1.0, figPath=None):
+    def get_optimal_SpanningTrees(self, acc_thr = 1.0, figPath=None, moreEdges=False):
         '''
         To get all the spanning trees given a graph. The trees should be ordered according to its sum of weights.
+
+        moreEdges: whether to add more edges (circles) to realize the 100% coverage rate.
         '''
         self.constG()
         # sys.exit(0)
         if not self.GT_adj is None:
             acc_GT_0 = self.accWithGT(self.G)
-            print(f"Accurcy in terms of GT before becoming a tree: {acc_GT_0}")
+            print(f"Accuracy in terms of GT before becoming a tree: {acc_GT_0}")
             print("Precision: %.5f" % (self.n_nodes / (2 ** (self.n_nodes*(self.n_nodes-1)/2) - 1)))
             print("Size: %d" % self.G.size(weight="weight"))
         if  not self.GT_adj is None: # GT
-            print("Statistics of GT:")
+            print("---Statistics of GT:")
             self.check_subGraph_connectivity(nx.from_numpy_array(self.GT_adj), range(len(self.tfM)))
             print(self.metrics)
             print("Size: %d" % (nx.from_numpy_array(self.GT_adj * nx.adjacency_matrix(self.G).toarray()).size(weight="weight")))
+            print("---")
 
         trees = nx.algorithms.tree.mst.SpanningTreeIterator(self.G, minimum=False)
         randomSub = self.get_random_subG(k=1000)
@@ -286,14 +300,78 @@ class SemanticMap:
         acc_list = []
         weight_list_ix = []
         for ix, t in enumerate(trees):
-            if ix % 1 == 0:
+            if ix ==0:#% 10000 == 0:# and ix > 30000:
                 print(f"This is the id of the spanning tree: {ix}")
                 self.check_subGraph_connectivity(t, selected_ins)
                 print(ix, self.connected_flag)
+
+                # Add more edges to cover all the instances
+                if moreEdges:
+                    # sorted_edges_by_weights = sorted(self.G.edges.data(), key=lambda x:x[2]['weight'], reverse=True)
+                    possible_edges = []
+                    for si, flag in zip(selected_ins, self.connected_flag):
+                        if not flag:
+                            jx_list = [jx for jx in range(self.n_nodes) if self.tfM[si, jx] != 0]
+                            possible_edges += [(jx_list[jjx], jx_list[kkx], {'weight': self.G.get_edge_data(jx_list[jjx], jx_list[kkx])['weight']}) for jjx in range(len(jx_list)) for kkx in range(jjx+1, len(jx_list))]
+
+                    # 统计边的次数（只考虑节点对，忽略权重）
+                    edges_without_attributes = [(u, v) for u, v, _ in possible_edges]
+                    edge_counts = Counter(edges_without_attributes)
+
+                    # 构建一个包含次数和最大权重的结构
+                    edge_info = {}
+                    for u, v, attr in possible_edges:
+                        edge = (u, v)
+                        weight = attr['weight']
+                        if edge not in edge_info:
+                            edge_info[edge] = {"count": edge_counts[edge], "max_weight": weight}
+                        else:
+                            edge_info[edge]["max_weight"] = max(edge_info[edge]["max_weight"], weight)
+
+                    # 排序：按次数和最大权重降序
+                    sorted_edges_by_number = sorted(
+                        edge_info.items(),
+                        key=lambda x: x[1]["count"] + x[1]["max_weight"],
+                        reverse=True,
+                    )
+                    sorted_edges_by_number = [(edge[0], edge[1], {'weight': info['max_weight'], 'count': info['count']}) for edge, info in sorted_edges_by_number]
+                    # 'CO-CD'
+                    for iix, e in enumerate(sorted_edges_by_number):
+                        if sum(self.connected_flag) == len(self.connected_flag):
+                            break
+                        if (e[0], e[1]) in t.edges or (e[1], e[0]) in t.edges:
+                            continue
+                        else:
+                            print(f"The added edge is between {self.featNames[e[0]]} and {self.featNames[e[1]]}.")
+                            t.add_edge(e[0], e[1], **e[2])
+                            self.check_subGraph_connectivity(t, selected_ins, onlyUnconn=True)
+                            print(iix, self.connected_flag)
+                            merged_graph = nx.Graph()
+                            for subG in self.subG_list:
+                                merged_graph = nx.compose(merged_graph, subG)
+                            self.visualizeSM(t, hit=ix, acc_GT=1.1, showIns=False, savePath=figPath[:-4]+f"_{iix}_Subcompose"+figPath[-4:] if figPath else None)
+
                 print(">>> Intrinsic Evaluation >>>")
+                self.check_subGraph_connectivity(t, selected_ins)
                 print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
                 print("Summed Weight: %d" % t.size(weight="weight"))
                 print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
+                # prec_list.append(self.metrics[0])
+                recall_list.append(self.metrics[1])
+                weight_list.append(t.size(weight="weight"))
+                std_list.append(self.metrics[4])
+
+                # For merged graph
+                print(">>>>>>For merged graph>>>>>")
+                merged_graph = nx.Graph()
+                for subG in self.subG_list:
+                    merged_graph = nx.compose(merged_graph, subG)
+                self.check_subGraph_connectivity(merged_graph, selected_ins)
+                print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
+                print("Summed Weight: %d" % t.size(weight="weight"))
+                print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
+                print(">>>>>>END For merged graph>>>>>--")
+                print(">>> Extrinsic Evaluation >>>")
                 if not self.GT_adj is None:
                     acc_GT = self.accWithGT(t, norm=False)
                     print(">>> Extrinsic Evaluation >>>")
@@ -304,14 +382,8 @@ class SemanticMap:
                 # self.highlight_subgraphs(t, subG_list)
                 self.wrongcases = [ix for ix,i in enumerate(self.connected_flag) if not i]
                 print("Wrong instances id: %s" % self.wrongcases)
-                # if len(self.wrongcases) == 5:
-                # prec_list.append(self.metrics[0])
-                recall_list.append(self.metrics[1])
-                if t.size(weight="weight") not in set(weight_list):
-                    weight_list_ix.append((ix,t.size(weight="weight"))) 
-                weight_list.append(t.size(weight="weight"))
-                std_list.append(self.metrics[4])
                 
+
                 if self.metrics[1] >= acc_thr: # recall
                     optimal_trees.append(t)
                     self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)

@@ -18,7 +18,16 @@
 1. A dialect investigation to “敆”
 2. Repetitive adverbs
 3. Repetitive adverbs with more functions
+![generated SMMs](output/CS4_wGT_0.pdf)
 
+```
+Several Statistics (Update: 2025.01.13)
+Precision: 0.0015100037750094375         Recall: 1.0     F1: 0.003015454202488204
+Summed Weight: 102
+Network typology of degree mean: 2.111111111111111       std: 1.9116278371205837
+
+ACC_GT: 0.9382716049382716
+```
 
 
 ## Contacts
