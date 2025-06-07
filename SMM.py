@@ -8,9 +8,10 @@ from sklearn.manifold import MDS
 from itertools import combinations
 from collections import Counter
 class SemanticMap:
-    def __init__(self, tfM, featNames, adjM=None, GT_adj=None, zeroOcc=0):
+    def __init__(self, tfM, featNames, formNames, adjM=None, GT_adj=None, zeroOcc=0):
         self.tfM = tfM # (N, D)
         self.featNames = {ix:i for ix, i in enumerate(featNames)}
+        self.formNames = formNames # List
         self.n_nodes = len(featNames)
         self.n_instances = tfM.shape[0]
         self.ins2feats = {i : [self.featNames[j] for j in range(self.n_nodes) if self.tfM[i,j] != 0] for i in range(self.n_instances)}
@@ -362,15 +363,17 @@ class SemanticMap:
                 std_list.append(self.metrics[4])
 
                 # For merged graph
-                print(">>>>>>For merged graph>>>>>")
-                merged_graph = nx.Graph()
-                for subG in self.subG_list:
-                    merged_graph = nx.compose(merged_graph, subG)
-                self.check_subGraph_connectivity(merged_graph, selected_ins)
-                print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
-                print("Summed Weight: %d" % t.size(weight="weight"))
-                print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
-                print(">>>>>>END For merged graph>>>>>--")
+                if moreEdges:
+                    print(">>>>>>For merged graph>>>>>")
+                    merged_graph = nx.Graph()
+                    for subG in self.subG_list:
+                        merged_graph = nx.compose(merged_graph, subG)
+                    self.check_subGraph_connectivity(merged_graph, selected_ins)
+                    print(f"Precision: {self.metrics[0]} \t Recall: {self.metrics[1]} \t F1: {self.metrics[2]}")
+                    print("Summed Weight: %d" % t.size(weight="weight"))
+                    print(f"Network typology of degree mean: {self.metrics[3]} \t std: {self.metrics[4]}")
+                    print(">>>>>>END For merged graph>>>>>--")
+                
                 print(">>> Extrinsic Evaluation >>>")
                 if not self.GT_adj is None:
                     acc_GT = self.accWithGT(t, norm=False)
@@ -386,19 +389,20 @@ class SemanticMap:
 
                 if self.metrics[1] >= acc_thr: # recall
                     optimal_trees.append(t)
-                    self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
+                    # self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath=figPath[:-4]+f"_{ix}"+figPath[-4:] if figPath else None)
+                    self.visualizeSM(t, hit=ix, acc_GT=acc_GT, showIns=False, savePath = figPath)
                 if ix == 0:
                     print(f"End to the maximum iteration: {ix}")
                     break
                 # self.visualizeSM(t)
 
-        print("There are %d optimal trees" % len(optimal_trees))
-        # _ = [self.visualizeSM(t) for t in optimal_trees]
+        # print("There are %d optimal trees" % len(optimal_trees))
+        # # _ = [self.visualizeSM(t) for t in optimal_trees]
 
-        print(weight_list_ix)
-        print("Correlation to recall: %f" % np.corrcoef(acc_list, recall_list)[0, 1])
-        print("Correlation to std: %f" % np.corrcoef(acc_list, std_list)[0, 1])
-        print("Correlation to size: %f" % np.corrcoef(acc_list, weight_list)[0, 1])
+        # print(weight_list_ix)
+        # print("Correlation to recall: %f" % np.corrcoef(acc_list, recall_list)[0, 1])
+        # print("Correlation to std: %f" % np.corrcoef(acc_list, std_list)[0, 1])
+        # print("Correlation to size: %f" % np.corrcoef(acc_list, weight_list)[0, 1])
 
         # plt.figure()
         # plt.plot(range(len(acc_list)), acc_list, label="acc")
